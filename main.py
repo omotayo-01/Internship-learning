@@ -1,85 +1,98 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from typing import List, Optional
-from . import models, schemas, crud
-from .database import SessionLocal, engine, Base
+from fastapi import FastAPI, HTTPException, Depends, status, Request
+from fastapi.security import APIKeyHeader
+from pydantic import BaseModel, ValidationError
+from typing import Optional
+from fastapi.responses import JSONResponse
 
-Base.metadata.create_all(bind=engine)
+app = FastAPI(title="API with Key Authentication")
 
-app = FastAPI(title="CRUD API for Jobs and Companies")
+# API Key authentication
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
-# Dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# In a real app, this would be stored securely
+VALID_API_KEY = "your-secret-api-key"
 
-# Company endpoints
-@app.post("/companies/", response_model=schemas.Company)
-def create_company(company: schemas.CompanyCreate, db: Session = Depends(get_db)):
-    return crud.create_company(db=db, company=company)
+def get_api_key(api_key: str = Depends(api_key_header)):
+    if api_key != VALID_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API Key"
+        )
+    return api_key
 
-@app.get("/companies/", response_model=List[schemas.Company])
-def read_companies(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    companies = crud.get_companies(db, skip=skip, limit=limit)
-    return companies
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-@app.get("/companies/{company_id}", response_model=schemas.Company)
-def read_company(company_id: int, db: Session = Depends(get_db)):
-    db_company = crud.get_company(db, company_id=company_id)
-    if db_company is None:
-        raise HTTPException(status_code=404, detail="Company not found")
-    return db_company
+# Global exception handlers
+@app.exception_handler(StarletteHTTPException)
+async def not_found_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == status.HTTP_404_NOT_FOUND:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": "Resource not found"}
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
 
-@app.put("/companies/{company_id}", response_model=schemas.Company)
-def update_company(company_id: int, company: schemas.CompanyUpdate, db: Session = Depends(get_db)):
-    db_company = crud.update_company(db, company_id=company_id, company_update=company)
-    if db_company is None:
-        raise HTTPException(status_code=404, detail="Company not found")
-    return db_company
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()}
+    )
 
-@app.delete("/companies/{company_id}")
-def delete_company(company_id: int, db: Session = Depends(get_db)):
-    db_company = crud.delete_company(db, company_id=company_id)
-    if db_company is None:
-        raise HTTPException(status_code=404, detail="Company not found")
-    return {"message": "Company deleted"}
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error"}
+    )
 
-# Job endpoints
-@app.post("/jobs/", response_model=schemas.Job)
-def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
-    return crud.create_job(db=db, job=job)
+# Pydantic models
+class Item(BaseModel):
+    name: str
+    description: Optional[str] = None
+    price: float
 
-@app.get("/jobs/", response_model=List[schemas.Job])
-def read_jobs(
-    skip: int = 0,
-    limit: int = 100,
-    location: Optional[str] = Query(None, description="Filter by location"),
-    job_type: Optional[str] = Query(None, description="Filter by job type"),
-    db: Session = Depends(get_db)
-):
-    jobs = crud.get_jobs(db, skip=skip, limit=limit, location=location, job_type=job_type)
-    return jobs
+# Sample data
+items = {
+    1: {"name": "Item 1", "description": "First item", "price": 10.0},
+    2: {"name": "Item 2", "description": "Second item", "price": 20.0}
+}
 
-@app.get("/jobs/{job_id}", response_model=schemas.Job)
-def read_job(job_id: int, db: Session = Depends(get_db)):
-    db_job = crud.get_job(db, job_id=job_id)
-    if db_job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return db_job
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the API"}
 
-@app.put("/jobs/{job_id}", response_model=schemas.Job)
-def update_job(job_id: int, job: schemas.JobUpdate, db: Session = Depends(get_db)):
-    db_job = crud.update_job(db, job_id=job_id, job_update=job)
-    if db_job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return db_job
+@app.get("/cause_error")
+def cause_error(api_key: str = Depends(get_api_key)):
+    raise RuntimeError("Forced internal error")
 
-@app.delete("/jobs/{job_id}")
-def delete_job(job_id: int, db: Session = Depends(get_db)):
-    db_job = crud.delete_job(db, job_id=job_id)
-    if db_job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return {"message": "Job deleted"}
+@app.get("/items/{item_id}")
+def read_item(item_id: int, api_key: str = Depends(get_api_key)):
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return items[item_id]
+
+@app.post("/items/")
+def create_item(item: Item, api_key: str = Depends(get_api_key)):
+    new_id = max(items.keys()) + 1
+    items[new_id] = item.dict()
+    return {"id": new_id, **item.dict()}
+
+@app.put("/items/{item_id}")
+def update_item(item_id: int, item: Item, api_key: str = Depends(get_api_key)):
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    items[item_id] = item.dict()
+    return items[item_id]
+
+@app.delete("/items/{item_id}")
+def delete_item(item_id: int, api_key: str = Depends(get_api_key)):
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    del items[item_id]
+    return {"message": "Item deleted"}

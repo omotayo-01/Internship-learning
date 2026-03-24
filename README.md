@@ -1,46 +1,66 @@
-# CRUD API for Jobs and Companies
+# API with Key Authentication
 
-This is a FastAPI application that provides CRUD endpoints for Job and Company entities, with query parameter filtering for jobs by location and job_type.
+A FastAPI application that demonstrates API-key authentication via HTTP headers, global exception handlers, and integration tests using httpx.AsyncClient.
+
+## Features
+
+- **API Key Authentication**: Uses `X-API-Key` header for authentication
+- **Global Exception Handlers**: Handles 404 (Not Found), 422 (Validation Error), and 500 (Internal Server Error)
+- **CRUD Operations**: Basic Create, Read, Update, Delete operations for items
+- **Integration Tests**: Comprehensive tests using httpx.AsyncClient
 
 ## Installation
 
 1. Install dependencies:
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+pip install -r requirements.txt
+```
 
-2. Run the application:
+## Running the Application
 
-   ```bash
-   uvicorn main:app --reload
-   ```
+Start the server:
 
-3. Open your browser to `http://127.0.0.1:8000/docs` to see the interactive API documentation.
+```bash
+uvicorn main:app --reload
+```
 
-## Endpoints
+The API will be available at `http://127.0.0.1:8000`
 
-### Companies
+## API Key
 
-- `POST /companies/` - Create a company
-- `GET /companies/` - List companies
-- `GET /companies/{company_id}` - Get a specific company
-- `PUT /companies/{company_id}` - Update a company
-- `DELETE /companies/{company_id}` - Delete a company
+Use the following API key in the `X-API-Key` header:
 
-### Jobs
+```
+your-secret-api-key
+```
 
-- `POST /jobs/` - Create a job
-- `GET /jobs/` - List jobs (with optional filtering by location and job_type)
-- `GET /jobs/{job_id}` - Get a specific job
-- `PUT /jobs/{job_id}` - Update a job
-- `DELETE /jobs/{job_id}` - Delete a job
+## API Endpoints
 
-## Filtering
+- `GET /` - Welcome message
+- `GET /items/{item_id}` - Get item by ID
+- `POST /items/` - Create new item
+- `PUT /items/{item_id}` - Update item by ID
+- `DELETE /items/{item_id}` - Delete item by ID
 
-For the `/jobs/` endpoint, you can filter by:
+## Running Tests
 
-- `location`: Filter jobs by location (case-insensitive partial match)
-- `job_type`: Filter jobs by job type (case-insensitive partial match)
+Run the integration tests:
 
-Example: `GET /jobs/?location=New%20York&job_type=full-time`
+```bash
+pytest test_main.py -v
+```
+
+## Example Requests
+
+Get an item:
+
+```bash
+curl -H "X-API-Key: your-secret-api-key" http://127.0.0.1:8000/items/1
+```
+
+Create an item:
+
+```bash
+curl -X POST -H "X-API-Key: your-secret-api-key" -H "Content-Type: application/json" -d '{"name": "Test Item", "description": "A test item", "price": 10.0}' http://127.0.0.1:8000/items/
+```
